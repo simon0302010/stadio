@@ -17,8 +17,12 @@ fn main() {
 
     let mut controller = Controller::new();
 
+    let mut last_frame = Instant::now();
+
     loop {
-        let start = Instant::now();
+        let now = Instant::now();
+        let dt = now - last_frame;
+        last_frame = now;
 
         if !controller.poll() {
             warn!("Failed to poll controller");
@@ -26,11 +30,11 @@ fn main() {
             continue;
         }
 
-        // wait for at least 20ms
-        sleep(Duration::from_millis(20).saturating_sub(start.elapsed()));
-
-        if let Err(e) = keyboard_popup.tick(start.elapsed(), controller.l_stick) {
+        if let Err(e) = keyboard_popup.tick(dt, controller.l_stick) {
             warn!("Keyboard popup tick failed: {}", e);
         }
+
+        // wait for at least 20ms
+        sleep(Duration::from_millis(20).saturating_sub(now.elapsed()));
     }
 }

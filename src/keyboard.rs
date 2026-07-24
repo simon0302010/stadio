@@ -12,11 +12,11 @@ impl KeyboardPopup {
         Self { enigo }
     }
 
-    pub fn tick(&mut self, t: Duration, pos: (f32, f32)) -> Result<(), String> {
+    pub fn tick(&mut self, dt: Duration, pos: (f32, f32)) -> Result<(), String> {
         if let Ok(enigo) = self.enigo.lock()
             && let Ok(location) = enigo.location()
         {
-            info!("Mouse: {:?}, Left Stick: {:?}, t: {}ms", location, pos, t.as_millis());
+            info!("Mouse: {:?}, Left Stick: {:?}, dt: {}ms", location, pos, dt.as_millis());
         } else {
             return Err("Failed to get mouse location".to_string());
         }
