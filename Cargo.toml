@@ -5,3 +5,5 @@ edition = "2024"
 
 [dependencies]
 enigo = { version = "0.6.1", features = ["wayland"] }
+log = "0.4.33"
+simple_logger = "5.2.0"
