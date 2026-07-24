@@ -16,7 +16,9 @@ impl KeyboardPopup {
         if let Ok(enigo) = self.enigo.lock()
             && let Ok(location) = enigo.location()
         {
-            info!("Mouse is at {:?}", location);
+            info!("Mouse: {:?}, Left Stick: {:?}, t: {}ms", location, pos, t.as_millis());
+        } else {
+            return Err("Failed to get mouse location".to_string());
         }
 
         Ok(())

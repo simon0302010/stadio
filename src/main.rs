@@ -10,7 +10,7 @@ use log::warn;
 use crate::keyboard::KeyboardPopup;
 
 fn main() {
-    simple_logger::init().expect("Failed to initialize logger");
+    simple_logger::init_with_level(log::Level::Info).expect("Failed to initialize logger");
 
     let enigo = Arc::new(Mutex::new(Enigo::new(&Settings::default()).expect("Failed to init enigo")));
     let mut keyboard_popup = KeyboardPopup::new(enigo.clone());
