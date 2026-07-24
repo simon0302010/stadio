@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+gilrs = "0.11.2"
 enigo = { version = "0.6.1", features = ["wayland"] }
 log = "0.4.33"
 simple_logger = "5.2.0"
