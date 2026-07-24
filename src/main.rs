@@ -26,6 +26,9 @@ fn main() {
             continue;
         }
 
+        // wait for at least 20ms
+        sleep(Duration::from_millis(20).saturating_sub(start.elapsed()));
+
         if let Err(e) = keyboard_popup.tick(start.elapsed(), controller.l_stick) {
             warn!("Keyboard popup tick failed: {}", e);
         }
