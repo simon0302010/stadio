@@ -1,101 +1,48 @@
-use std::{
-    sync::{Arc, Mutex},
-    time::Duration,
-};
+use std::f32::consts::{FRAC_PI_4, PI, TAU};
 
-use enigo::{Enigo, Mouse};
-use log::info;
-use tiny_skia::{Paint, PathBuilder, Pixmap, Transform};
+use iced::widget::canvas::{Frame, Path};
+use iced::{Color, Point};
 
-pub struct KeyboardPopup {
-    keys: Vec<KeyboardKey>,
-}
-
-impl KeyboardPopup {
-    pub fn new() -> Self {
-        Self { keys: Vec::new() }
+pub fn draw_keyboard(frame: &mut Frame, center: Point, stick: (f32, f32)) {
+    let distance = stick.0.hypot(stick.1);
+    if distance <= 0.1 {
+        return;
     }
 
-    pub fn tick(
-        &mut self,
-        dt: Duration,
-        pos: (f32, f32),
-        cx: u32,
-        cy: u32,
-        pixmap: &mut Pixmap,
-    ) -> Result<(), String> {
-        if pos.0 < 0.05 && pos.0 > -0.05 && pos.1 < 0.05 && pos.1 > -0.05 {
-            return Ok(());
+    let selected_slice =
+        ((stick.0.atan2(stick.1).rem_euclid(TAU) + FRAC_PI_4 / 2.0) / FRAC_PI_4) as usize % 8;
+    let selected_ring = ((((distance - 0.1) / 0.9) * 3.0) as usize).min(2);
+    let rings = [20.0, 60.0, 100.0, 140.0];
+
+    for direction in 0..8 {
+        let middle = direction as f32 * FRAC_PI_4 - PI / 2.0;
+        let start = middle - FRAC_PI_4 / 2.0;
+        let end = middle + FRAC_PI_4 / 2.0;
+
+        for ring in 0..3 {
+            let path = Path::new(|path| {
+                path.move_to(point_on_circle(center, rings[ring], start));
+                path.line_to(point_on_circle(center, rings[ring + 1], start));
+                path.line_to(point_on_circle(center, rings[ring + 1], end));
+                path.line_to(point_on_circle(center, rings[ring], end));
+                path.close();
+            });
+
+            let color = if direction == selected_slice && ring == selected_ring {
+                Color::from_rgb8(0, 220, 80)
+            } else if (direction + ring) % 2 == 0 {
+                Color::from_rgba8(35, 35, 35, 0.85)
+            } else {
+                Color::from_rgba8(60, 60, 60, 0.85)
+            };
+            frame.fill(&path, color);
         }
-
-        let full_radius = 100; //* self.keys.len();
-
-        let mut paint = Paint::default();
-        paint.set_color_rgba8(0, 255, 0, 255);
-        let stick = PathBuilder::from_circle(
-            cx as f32 + full_radius as f32 * pos.0,
-            cy as f32 + (full_radius * -1) as f32 * pos.1,
-            10.0,
-        )
-        .expect("Failed to create circle");
-        pixmap.fill_path(
-            &stick,
-            &paint,
-            tiny_skia::FillRule::EvenOdd,
-            Transform::identity(),
-            None,
-        );
-
-        for key in self.keys.iter() {
-            key.render(cx, cy, pixmap);
-        }
-
-        Ok(())
-    }
-
-    pub fn create_keys(&mut self) {
-        self.keys = vec![
-            KeyboardKey::new('a', 1, 0),
-            KeyboardKey::new('b', 1, 90),
-            KeyboardKey::new('c', 1, 180),
-            KeyboardKey::new('d', 1, 270),
-        ]
     }
 }
 
-pub struct KeyboardKey {
-    key: char,
-    layer: u8,
-    angle: f32,
-}
-
-impl KeyboardKey {
-    pub fn new(key: char, layer: u8, angle: i32) -> Self {
-        Self {
-            key,
-            layer,
-            angle: angle as f32,
-        }
-    }
-
-    pub fn render(&self, cx: u32, cy: u32, pixmap: &mut Pixmap) {
-        let mut paint = Paint::default();
-        paint.set_color_rgba8(255, 255, 255, 255);
-
-        let radius = (100 * self.layer) as f32;
-        let angle = self.angle.to_radians();
-
-        let rx = radius * angle.cos();
-        let ry = radius * angle.sin();
-
-        let circle = PathBuilder::from_circle(cx as f32 + rx, cy as f32 + ry, 15.0)
-            .expect("Failed to draw circle");
-        pixmap.fill_path(
-            &circle,
-            &paint,
-            tiny_skia::FillRule::EvenOdd,
-            Transform::identity(),
-            None,
-        );
-    }
+fn point_on_circle(center: Point, radius: f32, angle: f32) -> Point {
+    Point::new(
+        center.x + angle.cos() * radius,
+        center.y + angle.sin() * radius,
+    )
 }
