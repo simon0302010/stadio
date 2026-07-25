@@ -41,13 +41,14 @@ fn main() -> iced::Result {
 struct Stadio {
     controller: ControllerState,
     page: keyboard::Page,
+    lowercase_more: bool,
     keyboard_position: Point,
     enigo: Option<Enigo>,
     mouse_passthrough: bool,
     scroll_remainder: f32,
     window_id: Option<iced::window::Id>,
     raw_window_id: Option<u32>,
-    x11_connection: Option<RustConnection>
+    x11_connection: Option<RustConnection>,
 }
 
 #[derive(Debug, Clone)]
@@ -55,15 +56,13 @@ enum Message {
     Controller(ControllerState),
     WindowId(Option<window::Id>),
     ReportPosition(Option<Point>),
-    RawWindowId(Option<u32>)
+    RawWindowId(Option<u32>),
 }
 
 impl Stadio {
     fn new() -> (Self, Task<Message>) {
         let x11_connection = if is_x11() {
-            RustConnection::connect(None)
-                .map(|(conn, _)| conn)
-                .ok()
+            RustConnection::connect(None).map(|(conn, _)| conn).ok()
         } else {
             None
         };
@@ -78,6 +77,7 @@ impl Stadio {
                 raw_window_id: None,
                 x11_connection,
                 page: keyboard::Page::Letters,
+                lowercase_more: false,
                 scroll_remainder: 0.0,
             },
             window::latest().map(Message::WindowId),
@@ -95,7 +95,9 @@ impl Stadio {
         match message {
             Message::WindowId(id) => {
                 self.window_id = id;
-                if let Some(id) = id && is_x11() {
+                if let Some(id) = id
+                    && is_x11()
+                {
                     return get_x11_id(id);
                 }
                 Task::none()
@@ -125,10 +127,19 @@ impl Stadio {
                     let _ = enigo.button(Button::Right, Direction::Click);
                 }
                 if controller.next_page {
+                    match self.page {
+                        keyboard::Page::Letters => self.lowercase_more = false,
+                        keyboard::Page::Lowercase => self.lowercase_more = true,
+                        _ => {}
+                    }
                     self.page = self.page.next();
                 }
                 if controller.confirm
-                    && let Some(key) = keyboard::selected_key(controller.left_stick, self.page)
+                    && let Some(key) = keyboard::selected_key(
+                        controller.left_stick,
+                        self.page,
+                        self.lowercase_more,
+                    )
                 {
                     press_key(enigo, key);
                 }
@@ -140,7 +151,12 @@ impl Stadio {
                 }
 
                 if keyboard_opened && let Some(id) = self.window_id {
-                    return move_window(id, self.keyboard_position, self.raw_window_id, &mut self.x11_connection);
+                    return move_window(
+                        id,
+                        self.keyboard_position,
+                        self.raw_window_id,
+                        &mut self.x11_connection,
+                    );
                 }
 
                 Task::none()
@@ -181,11 +197,7 @@ impl canvas::Program<Message> for Stadio {
         _cursor: mouse::Cursor,
     ) -> Vec<Geometry> {
         let mut frame = Frame::new(renderer, bounds.size());
-        keyboard::draw_keyboard(
-            &mut frame,
-            self.controller.left_stick,
-            self.page,
-        );
+        keyboard::draw_keyboard(&mut frame, self.controller.left_stick, self.page);
         vec![frame.into_geometry()]
     }
 }
@@ -243,11 +255,25 @@ fn enable_mouse_passthrough() -> bool {
     false
 }
 
-fn move_window(id: window::Id, dest: Point<f32>, raw_window_id: Option<u32>, x11_connection: &mut Option<RustConnection>) -> Task<Message> {
+fn move_window(
+    id: window::Id,
+    dest: Point<f32>,
+    raw_window_id: Option<u32>,
+    x11_connection: &mut Option<RustConnection>,
+) -> Task<Message> {
     info!("moving window to {:?}", dest);
 
-    if is_x11() && let Some(raw_id) = raw_window_id && let Some(conn) = x11_connection {
-        conn.configure_window(raw_id, &ConfigureWindowAux::new().x(dest.x as i32 - 50).y(dest.y as i32 - 50)).expect("Failed to move window");
+    if is_x11()
+        && let Some(raw_id) = raw_window_id
+        && let Some(conn) = x11_connection
+    {
+        conn.configure_window(
+            raw_id,
+            &ConfigureWindowAux::new()
+                .x(dest.x as i32 - 50)
+                .y(dest.y as i32 - 50),
+        )
+        .expect("Failed to move window");
         conn.flush().expect("Failed to flush connection");
         conn.sync().expect("Failed to sync connection");
         Task::none()
@@ -265,7 +291,8 @@ fn get_x11_id(id: window::Id) -> Task<Message> {
                 None
             }
         })
-    }).map(Message::RawWindowId)
+    })
+    .map(Message::RawWindowId)
 }
 
 fn is_x11() -> bool {

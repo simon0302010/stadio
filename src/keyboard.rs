@@ -39,33 +39,84 @@ impl Page {
 }
 
 const LETTERS: [&str; 24] = [
-    "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S",
-    "T", "U", "V", "W", "X",
+    "B", "C", "A", "F", "D", "E", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Y", "R", "U",
+    "S", "T", "X", "V", "W",
 ];
 const LOWERCASE: [&str; 24] = [
-    "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s",
-    "t", "u", "v", "w", "x",
+    "b", "c", "a", "f", "d", "e", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "y", "r", "u",
+    "s", "t", "x", "v", "w",
 ];
 const MORE: [&str; 24] = [
-    "Y", "Z", "SPACE", "ENTER", "BKSP", "TAB", "SHIFT", "CAPS", "ESC", "DEL", "-", "=", "[", "]",
-    "\\", ";", "'", ",", ".", "/", "`", "LEFT", "RIGHT", "UNDO",
+    "Z/z", "Q/q", "SPACE", "!", "?", "BKSP", ":", ";", "ENTER", "\"", "'", ".", "<", ">", ",", "_",
+    "-", "/", "+", "=", "@", "\\", "|", "TAB",
 ];
 const NUMBERS: [&str; 24] = [
-    "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", ".", ",", "+", "-", "*", "/", "%", "=", "(",
-    ")", "SPACE", "ENTER", "BKSP", "TAB",
+    "3", "2", "1", "6", "5", "4", "9", "8", "7", "(", ")", "0", "^", "&", "*", "{", "}", "%", "[",
+    "]", "#", "`", "~", "$",
 ];
 const SYMBOLS: [&str; 24] = [
-    "!", "@", "#", "$", "%", "^", "&", "*", "(", ")", "_", "+", "{", "}", "|", ":", "\"", "<", ">",
-    "?", "~", "`", "[", "]",
+    "F1",
+    "F2",
+    "F3",
+    "F4",
+    "F5",
+    "F6",
+    "F7",
+    "F8",
+    "F9",
+    "F10",
+    "F11",
+    "F12",
+    "SUPER",
+    "ALT",
+    "CTRL",
+    "CUT",
+    "UNDO",
+    "COPY",
+    "SELECT_ALL",
+    "FIND",
+    "PASTE",
+    "APP_SWITCH",
+    "SHIFT",
+    "SAVE",
 ];
 const NAVIGATION: [&str; 24] = [
-    "UP", "DOWN", "LEFT", "RIGHT", "HOME", "END", "PGUP", "PGDN", "TAB", "ESC", "DEL", "BKSP",
-    "ENTER", "SPACE", "INS", "CAPS", "COPY", "PASTE", "CUT", "UNDO", "F1", "F2", "F3", "F4",
+    "HOME",
+    "PGUP",
+    "UP",
+    "END",
+    "PGDN",
+    "DOWN",
+    "WORD_LEFT",
+    "SELECT_LEFT",
+    "LEFT",
+    "WORD_RIGHT",
+    "SELECT_RIGHT",
+    "RIGHT",
+    "INS",
+    "PRTSCR",
+    "DEL",
+    "MAXIMIZE",
+    "MINIMIZE",
+    "WINDOW_CLOSE",
+    "VOLUME_DOWN",
+    "MUTE",
+    "VOLUME_UP",
+    "ESC",
+    "PLAY_PAUSE",
+    "NEXT",
 ];
 
-pub fn selected_key(stick: (f32, f32), page: Page) -> Option<&'static str> {
+pub fn selected_key(stick: (f32, f32), page: Page, lowercase: bool) -> Option<&'static str> {
     let (direction, ring) = selection(stick)?;
-    Some(page.data().0[direction * 3 + ring])
+    let key = page.data().0[direction * 3 + ring];
+    Some(match key {
+        "Q/q" if lowercase => "q",
+        "Q/q" => "Q",
+        "Z/z" if lowercase => "z",
+        "Z/z" => "Z",
+        _ => key,
+    })
 }
 
 pub fn draw_keyboard(frame: &mut Frame, stick: (f32, f32), page: Page) {
