@@ -8,3 +8,4 @@ gilrs = "0.11.2"
 enigo = { version = "0.6.1", features = ["wayland"] }
 log = "0.4.33"
 simple_logger = "5.2.0"
+winit = "0.30.13"
