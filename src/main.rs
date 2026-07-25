@@ -3,10 +3,16 @@ mod keyboard;
 
 use enigo::{Axis, Button, Coordinate, Direction, Enigo, Key, Keyboard, Mouse, Settings};
 use iced::mouse;
+use iced::wgpu::rwh::RawWindowHandle;
 use iced::widget::canvas::{self, Canvas, Frame, Geometry};
 use iced::{Color, Element, Fill, Point, Rectangle, Renderer, Subscription, Theme, theme, window};
+use iced::{Size, Task};
 
 use controller::ControllerState;
+use x11rb::connection::Connection;
+use x11rb::protocol::xproto::{ConfigureWindowAux, ConnectionExt};
+use x11rb::rust_connection::RustConnection;
+use x11rb::wrapper::ConnectionExt as SyncExt;
 
 fn main() -> iced::Result {
     iced::application(Stadio::new, Stadio::update, Stadio::view)
@@ -17,10 +23,12 @@ fn main() -> iced::Result {
             text_color: Color::WHITE,
         })
         .window(window::Settings {
-            maximized: true,
+            maximized: false,
             decorations: false,
             transparent: true,
             level: window::Level::AlwaysOnTop,
+            resizable: false,
+            size: Size::new(280.0, 280.0), // 140.0 * 2.0
             ..window::Settings::default()
         })
         .run()
@@ -33,84 +41,131 @@ struct Stadio {
     enigo: Option<Enigo>,
     mouse_passthrough: bool,
     scroll_remainder: f32,
+    window_id: Option<iced::window::Id>,
+    raw_window_id: Option<u32>,
+    x11_connection: Option<RustConnection>
+}
+
+#[derive(Debug, Clone)]
+enum Message {
+    Controller(ControllerState),
+    WindowId(Option<window::Id>),
+    ReportPosition(Option<Point>),
+    RawWindowId(Option<u32>)
 }
 
 impl Stadio {
-    fn new() -> Self {
-        Self {
-            controller: ControllerState::default(),
-            page: keyboard::Page::default(),
-            keyboard_position: Point::new(550.0, 390.0),
-            enigo: Enigo::new(&Settings::default()).ok(),
-            mouse_passthrough: false,
-            scroll_remainder: 0.0,
-        }
-    }
-
-    fn update(&mut self, controller: ControllerState) {
-        let keyboard_opened =
-            magnitude(self.controller.left_stick) <= 0.1 && magnitude(controller.left_stick) > 0.1;
-        self.controller = controller;
-
-        if controller.next_page {
-            self.page = self.page.next();
-        }
-
-        let selected_key = if controller.confirm {
-            keyboard::selected_key(controller.left_stick, self.page)
+    fn new() -> (Self, Task<Message>) {
+        let x11_connection = if is_x11() {
+            RustConnection::connect(None)
+                .map(|(conn, _)| conn)
+                .ok()
         } else {
             None
         };
 
-        if !self.mouse_passthrough {
-            self.mouse_passthrough = enable_mouse_passthrough();
-        }
+        (
+            Self {
+                controller: ControllerState::default(),
+                keyboard_position: Point::new(550.0, 390.0),
+                enigo: Enigo::new(&Settings::default()).ok(),
+                mouse_passthrough: false,
+                window_id: None,
+                raw_window_id: None,
+                x11_connection,
+                page: keyboard::Page::Letters,
+                scroll_remainder: 0.0,
+            },
+            window::latest().map(Message::WindowId),
+        )
+    }
 
-        let Some(enigo) = self.enigo.as_mut() else {
-            return;
-        };
-
-        if keyboard_opened && let Ok((x, y)) = enigo.location() {
-            self.keyboard_position = Point::new(x as f32, y as f32);
-        }
-
-        if controller.left_click {
-            let _ = enigo.button(Button::Left, Direction::Click);
-        }
-        if controller.right_click {
-            let _ = enigo.button(Button::Right, Direction::Click);
-        }
-        if let Some(key) = selected_key {
-            press_key(enigo, key);
-        }
-
-        let (x, y) = controller.right_stick;
-        if x.abs() > 0.05 || y.abs() > 0.05 {
-            let _ = enigo.move_mouse((x * 18.0) as i32, (y * -18.0) as i32, Coordinate::Rel);
-        }
-
-        self.scroll_remainder += controller.scroll * controller.scroll.abs() * 1.2;
+    fn update(&mut self, message: Message) -> Task<Message> {
+        self.scroll_remainder += self.controller.scroll * self.controller.scroll.abs() * 1.2;
         let scroll = self.scroll_remainder.trunc() as i32;
         if scroll != 0 {
-            let _ = enigo.scroll(scroll, Axis::Vertical);
+            let _ = self.enigo.as_mut().unwrap().scroll(scroll, Axis::Vertical);
             self.scroll_remainder -= scroll as f32;
+        }
+
+        match message {
+            Message::WindowId(id) => {
+                self.window_id = id;
+                if let Some(id) = id && is_x11() {
+                    return get_x11_id(id);
+                }
+                Task::none()
+            }
+            Message::Controller(controller) => {
+                let keyboard_opened = magnitude(self.controller.left_stick) <= 0.1
+                    && magnitude(controller.left_stick) > 0.1;
+                self.controller = controller;
+
+                if !self.mouse_passthrough {
+                    self.mouse_passthrough = enable_mouse_passthrough();
+                }
+
+                let Some(enigo) = self.enigo.as_mut() else {
+                    return Task::none();
+                };
+
+                if keyboard_opened && let Ok((x, y)) = enigo.location() {
+                    println!("keyboard opened, mouse at ({},{})", x, y);
+                    self.keyboard_position = Point::new(x as f32 - 140.0, y as f32 - 140.0);
+                }
+
+                if controller.left_click {
+                    let _ = enigo.button(Button::Left, Direction::Click);
+                }
+                if controller.right_click {
+                    let _ = enigo.button(Button::Right, Direction::Click);
+                }
+                if controller.next_page {
+                    self.page = self.page.next();
+                }
+                if controller.confirm
+                    && let Some(key) = keyboard::selected_key(controller.left_stick, self.page)
+                {
+                    press_key(enigo, key);
+                }
+
+                let (x, y) = controller.right_stick;
+                if x.abs() > 0.05 || y.abs() > 0.05 {
+                    let _ =
+                        enigo.move_mouse((x * 18.0) as i32, (y * -18.0) as i32, Coordinate::Rel);
+                }
+
+                if keyboard_opened && let Some(id) = self.window_id {
+                    return move_window(id, self.keyboard_position, self.raw_window_id, &mut self.x11_connection);
+                }
+
+                Task::none()
+            }
+            Message::ReportPosition(position) => {
+                println!("window got moved to {:?}", position);
+                Task::none()
+            }
+            Message::RawWindowId(id) => {
+                self.raw_window_id = id;
+                Task::none()
+            }
         }
     }
 
-    fn subscription(&self) -> Subscription<ControllerState> {
-        Subscription::run(controller::listen)
+    fn subscription(&self) -> Subscription<Message> {
+        Subscription::run(controller::listen).map(Message::Controller)
     }
 
     fn theme(&self) -> Theme {
         Theme::Dark
     }
 
-    fn view(&self) -> Element<'_, ControllerState> {
+    fn view(&self) -> Element<'_, Message> {
         Canvas::new(self).width(Fill).height(Fill).into()
     }
 }
 
-impl canvas::Program<ControllerState> for Stadio {
+impl canvas::Program<Message> for Stadio {
     type State = ();
 
     fn draw(
@@ -124,7 +179,6 @@ impl canvas::Program<ControllerState> for Stadio {
         let mut frame = Frame::new(renderer, bounds.size());
         keyboard::draw_keyboard(
             &mut frame,
-            self.keyboard_position,
             self.controller.left_stick,
             self.page,
         );
@@ -183,4 +237,35 @@ fn enable_mouse_passthrough() -> bool {
 #[cfg(not(target_os = "macos"))]
 fn enable_mouse_passthrough() -> bool {
     false
+}
+
+fn move_window(id: window::Id, dest: Point<f32>, raw_window_id: Option<u32>, x11_connection: &mut Option<RustConnection>) -> Task<Message> {
+    println!("moving window to {:?}", dest);
+
+    if is_x11() && let Some(raw_id) = raw_window_id && let Some(conn) = x11_connection {
+        conn.configure_window(raw_id, &ConfigureWindowAux::new().x(dest.x as i32 - 50).y(dest.y as i32 - 50)).expect("Failed to move window");
+        conn.flush().expect("Failed to flush connection");
+        conn.sync().expect("Failed to sync connection");
+        Task::none()
+    } else {
+        window::move_to(id, dest).chain(window::position(id).map(Message::ReportPosition))
+    }
+}
+
+fn get_x11_id(id: window::Id) -> Task<Message> {
+    window::run(id, |window| {
+        window.window_handle().ok().and_then(|handle| {
+            if let RawWindowHandle::Xlib(xlib) = handle.as_raw() {
+                Some(xlib.window as u32)
+            } else {
+                None
+            }
+        })
+    }).map(Message::RawWindowId)
+}
+
+fn is_x11() -> bool {
+    std::env::var("XDG_SESSION_TYPE")
+        .map(|v| v == "x11")
+        .unwrap_or(false)
 }

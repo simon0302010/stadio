@@ -68,7 +68,9 @@ pub fn selected_key(stick: (f32, f32), page: Page) -> Option<&'static str> {
     Some(page.data().0[direction * 3 + ring])
 }
 
-pub fn draw_keyboard(frame: &mut Frame, center: Point, stick: (f32, f32), page: Page) {
+pub fn draw_keyboard(frame: &mut Frame, stick: (f32, f32), page: Page) {
+    let center = Point { x: 140.0, y: 140.0 };
+
     let Some((selected_direction, selected_ring)) = selection(stick) else {
         return;
     };
