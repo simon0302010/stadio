@@ -2,11 +2,16 @@ mod controller;
 mod keyboard;
 
 use enigo::{Button, Coordinate, Direction, Enigo, Mouse, Settings};
+use iced::wgpu::rwh::RawWindowHandle;
 use iced::widget::canvas::{self, Canvas, Frame, Geometry};
 use iced::{Color, Element, Fill, Point, Rectangle, Renderer, Subscription, Theme, theme, window};
 use iced::{Size, Task, mouse};
 
 use controller::ControllerState;
+use x11rb::connection::Connection;
+use x11rb::protocol::xproto::{ConfigureWindowAux, ConnectionExt};
+use x11rb::rust_connection::RustConnection;
+use x11rb::wrapper::ConnectionExt as SyncExt;
 
 fn main() -> iced::Result {
     iced::application(Stadio::new, Stadio::update, Stadio::view)
@@ -34,17 +39,28 @@ struct Stadio {
     enigo: Option<Enigo>,
     mouse_passthrough: bool,
     window_id: Option<iced::window::Id>,
+    raw_window_id: Option<u32>,
+    x11_connection: Option<RustConnection>
 }
 
 #[derive(Debug, Clone)]
 enum Message {
     Controller(ControllerState),
     WindowId(Option<window::Id>),
-    ReportPosition(Option<Point>)
+    ReportPosition(Option<Point>),
+    RawWindowId(Option<u32>)
 }
 
 impl Stadio {
     fn new() -> (Self, Task<Message>) {
+        let x11_connection = if is_x11() {
+            RustConnection::connect(None)
+                .map(|(conn, _)| conn)
+                .ok()
+        } else {
+            None
+        };
+
         (
             Self {
                 controller: ControllerState::default(),
@@ -52,6 +68,8 @@ impl Stadio {
                 enigo: Enigo::new(&Settings::default()).ok(),
                 mouse_passthrough: false,
                 window_id: None,
+                raw_window_id: None,
+                x11_connection
             },
             window::latest().map(Message::WindowId),
         )
@@ -61,6 +79,9 @@ impl Stadio {
         match message {
             Message::WindowId(id) => {
                 self.window_id = id;
+                if let Some(id) = id && is_x11() {
+                    return get_x11_id(id);
+                }
                 Task::none()
             }
             Message::Controller(controller) => {
@@ -91,18 +112,18 @@ impl Stadio {
                         enigo.move_mouse((x * 18.0) as i32, (y * -18.0) as i32, Coordinate::Rel);
                 }
 
-                if keyboard_opened
-                    && let Some(id) = self.window_id
-                {
-                    println!("moving window to {:?}", self.keyboard_position);
-                    return window::move_to(id, self.keyboard_position)
-                        .chain(window::position(id).map(Message::ReportPosition))
+                if keyboard_opened && let Some(id) = self.window_id {
+                    return move_window(id, self.keyboard_position, self.raw_window_id, &mut self.x11_connection);
                 }
 
                 Task::none()
             }
             Message::ReportPosition(position) => {
                 println!("window got moved to {:?}", position);
+                Task::none()
+            }
+            Message::RawWindowId(id) => {
+                self.raw_window_id = id;
                 Task::none()
             }
         }
@@ -165,4 +186,35 @@ fn enable_mouse_passthrough() -> bool {
 #[cfg(not(target_os = "macos"))]
 fn enable_mouse_passthrough() -> bool {
     false
+}
+
+fn move_window(id: window::Id, dest: Point<f32>, raw_window_id: Option<u32>, x11_connection: &mut Option<RustConnection>) -> Task<Message> {
+    println!("moving window to {:?}", dest);
+
+    if is_x11() && let Some(raw_id) = raw_window_id && let Some(conn) = x11_connection {
+        conn.configure_window(raw_id, &ConfigureWindowAux::new().x(dest.x as i32 - 50).y(dest.y as i32 - 50)).expect("Failed to move window");
+        conn.flush().expect("Failed to flush connection");
+        conn.sync().expect("Failed to sync connection");
+        Task::none()
+    } else {
+        window::move_to(id, dest).chain(window::position(id).map(Message::ReportPosition))
+    }
+}
+
+fn get_x11_id(id: window::Id) -> Task<Message> {
+    window::run(id, |window| {
+        window.window_handle().ok().and_then(|handle| {
+            if let RawWindowHandle::Xlib(xlib) = handle.as_raw() {
+                Some(xlib.window as u32)
+            } else {
+                None
+            }
+        })
+    }).map(Message::RawWindowId)
+}
+
+fn is_x11() -> bool {
+    std::env::var("XDG_SESSION_TYPE")
+        .map(|v| v == "x11")
+        .unwrap_or(false)
 }
