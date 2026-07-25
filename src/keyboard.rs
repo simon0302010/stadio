@@ -4,6 +4,8 @@ use iced::widget::canvas::{Frame, Path};
 use iced::{Color, Point};
 
 pub fn draw_keyboard(frame: &mut Frame, center: Point, stick: (f32, f32)) {
+    let center = Point::new(140.0, 140.0);
+
     let distance = stick.0.hypot(stick.1);
     if distance <= 0.1 {
         return;

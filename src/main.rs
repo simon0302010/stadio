@@ -2,7 +2,7 @@ mod controller;
 mod keyboard;
 
 use enigo::{Button, Coordinate, Direction, Enigo, Mouse, Settings};
-use iced::mouse;
+use iced::{Size, mouse};
 use iced::widget::canvas::{self, Canvas, Frame, Geometry};
 use iced::{Color, Element, Fill, Point, Rectangle, Renderer, Subscription, Theme, theme, window};
 
@@ -17,10 +17,12 @@ fn main() -> iced::Result {
             text_color: Color::WHITE,
         })
         .window(window::Settings {
-            maximized: true,
+            maximized: false,
             decorations: false,
             transparent: true,
             level: window::Level::AlwaysOnTop,
+            resizable: false,
+            size: Size::new(280.0, 280.0), // 140.0 * 2.0
             ..window::Settings::default()
         })
         .run()
