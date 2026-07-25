@@ -3,7 +3,7 @@ use std::f32::consts::{FRAC_PI_4, PI, TAU};
 use iced::widget::canvas::{Frame, Path};
 use iced::{Color, Point};
 
-pub fn draw_keyboard(frame: &mut Frame, center: Point, stick: (f32, f32)) {
+pub fn draw_keyboard(frame: &mut Frame, stick: (f32, f32)) {
     let center = Point::new(140.0, 140.0);
 
     let distance = stick.0.hypot(stick.1);

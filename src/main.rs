@@ -1,19 +1,23 @@
 mod controller;
 mod keyboard;
 
+use controller::ControllerState;
+
 use enigo::{Button, Coordinate, Direction, Enigo, Mouse, Settings};
 use iced::wgpu::rwh::RawWindowHandle;
 use iced::widget::canvas::{self, Canvas, Frame, Geometry};
 use iced::{Color, Element, Fill, Point, Rectangle, Renderer, Subscription, Theme, theme, window};
 use iced::{Size, Task, mouse};
 
-use controller::ControllerState;
+use log::info;
 use x11rb::connection::Connection;
 use x11rb::protocol::xproto::{ConfigureWindowAux, ConnectionExt};
 use x11rb::rust_connection::RustConnection;
 use x11rb::wrapper::ConnectionExt as SyncExt;
 
 fn main() -> iced::Result {
+    simple_logger::init().expect("Failed to init logger");
+
     iced::application(Stadio::new, Stadio::update, Stadio::view)
         .subscription(Stadio::subscription)
         .theme(Stadio::theme)
@@ -98,7 +102,7 @@ impl Stadio {
                 };
 
                 if keyboard_opened && let Ok((x, y)) = enigo.location() {
-                    println!("keyboard opened, mouse at ({},{})", x, y);
+                    info!("keyboard opened, mouse at ({},{})", x, y);
                     self.keyboard_position = Point::new(x as f32 - 140.0, y as f32 - 140.0);
                 }
 
@@ -119,7 +123,7 @@ impl Stadio {
                 Task::none()
             }
             Message::ReportPosition(position) => {
-                println!("window got moved to {:?}", position);
+                info!("window moved to {:?}", position);
                 Task::none()
             }
             Message::RawWindowId(id) => {
@@ -156,7 +160,6 @@ impl canvas::Program<Message> for Stadio {
         let mut frame = Frame::new(renderer, bounds.size());
         keyboard::draw_keyboard(
             &mut frame,
-            self.keyboard_position,
             self.controller.left_stick,
         );
         vec![frame.into_geometry()]
@@ -189,7 +192,7 @@ fn enable_mouse_passthrough() -> bool {
 }
 
 fn move_window(id: window::Id, dest: Point<f32>, raw_window_id: Option<u32>, x11_connection: &mut Option<RustConnection>) -> Task<Message> {
-    println!("moving window to {:?}", dest);
+    info!("moving window to {:?}", dest);
 
     if is_x11() && let Some(raw_id) = raw_window_id && let Some(conn) = x11_connection {
         conn.configure_window(raw_id, &ConfigureWindowAux::new().x(dest.x as i32 - 50).y(dest.y as i32 - 50)).expect("Failed to move window");

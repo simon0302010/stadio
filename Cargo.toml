@@ -7,6 +7,8 @@ edition = "2024"
 enigo = { version = "0.6.1", features = ["wayland"] }
 gilrs = "0.11.2"
 iced = { version = "0.14.0", features = ["canvas", "tokio"] }
+log = "0.4.33"
+simple_logger = "5.2.0"
 tokio = { version = "1", features = ["time"] }
 x11rb = "0.14.0"
 
