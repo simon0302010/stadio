@@ -1,4 +1,4 @@
-use gilrs::{Axis, Button, EventType, GamepadId, Gilrs};
+use gilrs::{Axis, Button, EventType, Gilrs};
 use iced::futures::{Stream, stream};
 use tokio::time::{Duration, sleep};
 
@@ -6,58 +6,58 @@ use tokio::time::{Duration, sleep};
 pub struct ControllerState {
     pub left_stick: (f32, f32),
     pub right_stick: (f32, f32),
-    pub clicked: bool,
+    pub left_click: bool,
+    pub right_click: bool,
+    pub confirm: bool,
+    pub next_page: bool,
+    pub scroll: f32,
 }
 
 struct Controller {
     gilrs: Gilrs,
-    gamepad: Option<GamepadId>,
 }
 
 impl Controller {
     fn new() -> Option<Self> {
-        let gilrs = Gilrs::new().ok()?;
-        let gamepad = gilrs.gamepads().next().map(|(id, _)| id);
-        Some(Self { gilrs, gamepad })
+        Some(Self {
+            gilrs: Gilrs::new().ok()?,
+        })
     }
 
     fn read(&mut self) -> ControllerState {
-        let mut clicked = false;
+        let mut state = ControllerState::default();
+
         while let Some(event) = self.gilrs.next_event() {
-            match event.event {
-                EventType::Disconnected if self.gamepad == Some(event.id) => self.gamepad = None,
-                EventType::Disconnected => {}
-                EventType::ButtonPressed(Button::RightTrigger2, _) => {
-                    self.gamepad = Some(event.id);
-                    clicked = true;
+            if let EventType::ButtonPressed(button, _) = event.event {
+                match button {
+                    Button::LeftTrigger => state.right_click = true,
+                    Button::RightTrigger => state.left_click = true,
+                    Button::South => state.confirm = true,
+                    Button::LeftThumb => state.next_page = true,
+                    _ => {}
                 }
-                _ => self.gamepad = Some(event.id),
             }
         }
 
-        self.gamepad = self
-            .gamepad
-            .filter(|id| self.gilrs.connected_gamepad(*id).is_some())
-            .or_else(|| self.gilrs.gamepads().next().map(|(id, _)| id));
-
-        let Some(id) = self.gamepad else {
-            return ControllerState {
-                clicked,
-                ..ControllerState::default()
-            };
+        let Some((_, gamepad)) = self.gilrs.gamepads().next() else {
+            return state;
         };
-        let gamepad = self.gilrs.gamepad(id);
-        ControllerState {
-            left_stick: (
-                gamepad.value(Axis::LeftStickX),
-                gamepad.value(Axis::LeftStickY),
-            ),
-            right_stick: (
-                gamepad.value(Axis::RightStickX),
-                gamepad.value(Axis::RightStickY),
-            ),
-            clicked,
-        }
+        state.left_stick = (
+            gamepad.value(Axis::LeftStickX),
+            gamepad.value(Axis::LeftStickY),
+        );
+        state.right_stick = (
+            gamepad.value(Axis::RightStickX),
+            gamepad.value(Axis::RightStickY),
+        );
+        let left_trigger = gamepad
+            .button_data(Button::LeftTrigger2)
+            .map_or(0.0, |button| button.value());
+        let right_trigger = gamepad
+            .button_data(Button::RightTrigger2)
+            .map_or(0.0, |button| button.value());
+        state.scroll = right_trigger - left_trigger;
+        state
     }
 }
 
@@ -76,12 +76,21 @@ pub fn listen() -> impl Stream<Item = ControllerState> {
                 };
 
                 let state = gamepad.read();
-                let old_state = previous.unwrap_or_default();
-                let keyboard_moved = stick_distance(state.left_stick, old_state.left_stick) > 0.005;
+                let old = previous.unwrap_or_default();
+                let keyboard_moved = distance(state.left_stick, old.left_stick) > 0.005;
                 let mouse_moving =
-                    magnitude(state.right_stick) > 0.05 || magnitude(old_state.right_stick) > 0.05;
+                    length(state.right_stick) > 0.05 || length(old.right_stick) > 0.05;
+                let scrolling = state.scroll.abs() > 0.05 || old.scroll.abs() > 0.05;
 
-                if previous.is_none() || keyboard_moved || mouse_moving || state.clicked {
+                if previous.is_none()
+                    || keyboard_moved
+                    || mouse_moving
+                    || scrolling
+                    || state.left_click
+                    || state.right_click
+                    || state.confirm
+                    || state.next_page
+                {
                     return Some((state, (controller, Some(state))));
                 }
             }
@@ -90,13 +99,13 @@ pub fn listen() -> impl Stream<Item = ControllerState> {
 }
 
 fn is_active(state: ControllerState) -> bool {
-    magnitude(state.left_stick) > 0.05 || magnitude(state.right_stick) > 0.05
+    length(state.left_stick) > 0.05 || length(state.right_stick) > 0.05 || state.scroll.abs() > 0.05
 }
 
-fn magnitude(stick: (f32, f32)) -> f32 {
+fn length(stick: (f32, f32)) -> f32 {
     stick.0.hypot(stick.1)
 }
 
-fn stick_distance(a: (f32, f32), b: (f32, f32)) -> f32 {
+fn distance(a: (f32, f32), b: (f32, f32)) -> f32 {
     (a.0 - b.0).hypot(a.1 - b.1)
 }
