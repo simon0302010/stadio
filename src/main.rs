@@ -10,7 +10,7 @@ use std::{
 };
 
 use controller::*;
-use enigo::{Enigo, Settings};
+use enigo::{Enigo, Mouse, Settings};
 use log::{info, warn};
 use softbuffer::{Context, Surface};
 use tiny_skia::{Color, Paint, PathBuilder, Pixmap, Stroke, Transform};
@@ -25,20 +25,26 @@ struct StadioApp {
     window: Option<Rc<Window>>,
     context: Option<Context<Rc<Window>>>,
     surface: Option<Surface<Rc<Window>, Rc<Window>>>,
-    enigo: Arc<Mutex<Enigo>>,
+    enigo: Enigo,
     controller: Controller,
+    keyboard_popup: KeyboardPopup,
+    last_frame: Instant,
 }
 
 impl Default for StadioApp {
     fn default() -> Self {
+        let enigo = Enigo::new(&Settings::default()).expect("Failed to init enigo");
+        let mut keyboard_popup = KeyboardPopup::new();
+        keyboard_popup.create_keys();
+
         Self {
             window: None,
             context: None,
             surface: None,
-            enigo: Arc::new(Mutex::new(
-                Enigo::new(&Settings::default()).expect("Failed to init enigo"),
-            )),
+            enigo,
             controller: Controller::new(),
+            keyboard_popup,
+            last_frame: Instant::now(),
         }
     }
 }
@@ -114,6 +120,30 @@ impl ApplicationHandler for StadioApp {
                     None,
                 );
 
+                self.controller.poll();
+
+                if self.controller.r_trigger {
+                    self.enigo
+                        .button(enigo::Button::Left, enigo::Direction::Click)
+                        .expect("Failed to left click");
+                }
+
+                self.enigo.move_mouse(
+                    (self.controller.r_stick.0 * 50.0) as i32,
+                    (self.controller.r_stick.1 * -50.0) as i32,
+                    enigo::Coordinate::Rel,
+                );
+
+                if let Err(e) = self.keyboard_popup.tick(
+                    self.last_frame.elapsed(),
+                    self.controller.l_stick,
+                    width / 2,
+                    height / 2,
+                    &mut pixmap,
+                ) {
+                    warn!("Keyboard popup tick failed: {}", e);
+                }
+
                 let mut buffer = surface.buffer_mut().unwrap();
 
                 for index in 0..(width * height) as usize {
@@ -123,6 +153,8 @@ impl ApplicationHandler for StadioApp {
                 }
 
                 buffer.present().unwrap();
+
+                self.last_frame = Instant::now();
 
                 if let Some(window) = self.window.as_ref() {
                     window.request_redraw();
