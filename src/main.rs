@@ -2,9 +2,9 @@ mod controller;
 mod keyboard;
 
 use enigo::{Button, Coordinate, Direction, Enigo, Mouse, Settings};
-use iced::{Size, mouse};
 use iced::widget::canvas::{self, Canvas, Frame, Geometry};
 use iced::{Color, Element, Fill, Point, Rectangle, Renderer, Subscription, Theme, theme, window};
+use iced::{Size, Task, mouse};
 
 use controller::ControllerState;
 
@@ -33,59 +33,95 @@ struct Stadio {
     keyboard_position: Point,
     enigo: Option<Enigo>,
     mouse_passthrough: bool,
+    window_id: Option<iced::window::Id>,
+}
+
+#[derive(Debug, Clone)]
+enum Message {
+    Controller(ControllerState),
+    WindowId(Option<window::Id>),
+    ReportPosition(Option<Point>)
 }
 
 impl Stadio {
-    fn new() -> Self {
-        Self {
-            controller: ControllerState::default(),
-            keyboard_position: Point::new(550.0, 390.0),
-            enigo: Enigo::new(&Settings::default()).ok(),
-            mouse_passthrough: false,
+    fn new() -> (Self, Task<Message>) {
+        (
+            Self {
+                controller: ControllerState::default(),
+                keyboard_position: Point::new(550.0, 390.0),
+                enigo: Enigo::new(&Settings::default()).ok(),
+                mouse_passthrough: false,
+                window_id: None,
+            },
+            window::latest().map(Message::WindowId),
+        )
+    }
+
+    fn update(&mut self, message: Message) -> Task<Message> {
+        match message {
+            Message::WindowId(id) => {
+                self.window_id = id;
+                Task::none()
+            }
+            Message::Controller(controller) => {
+                let keyboard_opened = magnitude(self.controller.left_stick) <= 0.1
+                    && magnitude(controller.left_stick) > 0.1;
+                self.controller = controller;
+
+                if !self.mouse_passthrough {
+                    self.mouse_passthrough = enable_mouse_passthrough();
+                }
+
+                let Some(enigo) = self.enigo.as_mut() else {
+                    return Task::none();
+                };
+
+                if keyboard_opened && let Ok((x, y)) = enigo.location() {
+                    println!("keyboard opened, mouse at ({},{})", x, y);
+                    self.keyboard_position = Point::new(x as f32 - 140.0, y as f32 - 140.0);
+                }
+
+                if controller.right_trigger {
+                    let _ = enigo.button(Button::Left, Direction::Click);
+                }
+
+                let (x, y) = controller.right_stick;
+                if x.abs() > 0.05 || y.abs() > 0.05 {
+                    let _ =
+                        enigo.move_mouse((x * 18.0) as i32, (y * -18.0) as i32, Coordinate::Rel);
+                }
+
+                if keyboard_opened
+                    && let Some(id) = self.window_id
+                {
+                    println!("moving window to {:?}", self.keyboard_position);
+                    return window::move_to(id, self.keyboard_position)
+                        .chain(window::position(id).map(Message::ReportPosition))
+                }
+
+                Task::none()
+            }
+            Message::ReportPosition(position) => {
+                println!("window got moved to {:?}", position);
+                Task::none()
+            }
         }
     }
 
-    fn update(&mut self, controller: ControllerState) {
-        let keyboard_opened =
-            magnitude(self.controller.left_stick) <= 0.1 && magnitude(controller.left_stick) > 0.1;
-        self.controller = controller;
-
-        if !self.mouse_passthrough {
-            self.mouse_passthrough = enable_mouse_passthrough();
-        }
-
-        let Some(enigo) = self.enigo.as_mut() else {
-            return;
-        };
-
-        if keyboard_opened && let Ok((x, y)) = enigo.location() {
-            self.keyboard_position = Point::new(x as f32, y as f32);
-        }
-
-        if controller.right_trigger {
-            let _ = enigo.button(Button::Left, Direction::Click);
-        }
-
-        let (x, y) = controller.right_stick;
-        if x.abs() > 0.05 || y.abs() > 0.05 {
-            let _ = enigo.move_mouse((x * 18.0) as i32, (y * -18.0) as i32, Coordinate::Rel);
-        }
-    }
-
-    fn subscription(&self) -> Subscription<ControllerState> {
-        Subscription::run(controller::listen)
+    fn subscription(&self) -> Subscription<Message> {
+        Subscription::run(controller::listen).map(Message::Controller)
     }
 
     fn theme(&self) -> Theme {
         Theme::Dark
     }
 
-    fn view(&self) -> Element<'_, ControllerState> {
+    fn view(&self) -> Element<'_, Message> {
         Canvas::new(self).width(Fill).height(Fill).into()
     }
 }
 
-impl canvas::Program<ControllerState> for Stadio {
+impl canvas::Program<Message> for Stadio {
     type State = ();
 
     fn draw(
