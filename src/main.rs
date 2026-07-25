@@ -3,20 +3,21 @@ mod keyboard;
 
 use controller::ControllerState;
 
-use enigo::{Button, Coordinate, Direction, Enigo, Mouse, Settings};
+use enigo::{Axis, Button, Coordinate, Direction, Enigo, Key, Keyboard, Mouse, Settings};
+use iced::mouse;
 use iced::wgpu::rwh::RawWindowHandle;
 use iced::widget::canvas::{self, Canvas, Frame, Geometry};
 use iced::{Color, Element, Fill, Point, Rectangle, Renderer, Subscription, Theme, theme, window};
-use iced::{Size, Task, mouse};
+use iced::{Size, Task};
 
-use log::info;
+use log::{Level, info};
 use x11rb::connection::Connection;
 use x11rb::protocol::xproto::{ConfigureWindowAux, ConnectionExt};
 use x11rb::rust_connection::RustConnection;
 use x11rb::wrapper::ConnectionExt as SyncExt;
 
 fn main() -> iced::Result {
-    simple_logger::init().expect("Failed to init logger");
+    simple_logger::init_with_level(Level::Debug).expect("Failed to init logger");
 
     iced::application(Stadio::new, Stadio::update, Stadio::view)
         .subscription(Stadio::subscription)
@@ -31,7 +32,7 @@ fn main() -> iced::Result {
             transparent: true,
             level: window::Level::AlwaysOnTop,
             resizable: false,
-            size: Size::new(280.0, 280.0), // 140.0 * 2.0
+            size: Size::new(270.0, 270.0), // 140.0 * 2.0
             ..window::Settings::default()
         })
         .run()
@@ -39,9 +40,11 @@ fn main() -> iced::Result {
 
 struct Stadio {
     controller: ControllerState,
+    page: keyboard::Page,
     keyboard_position: Point,
     enigo: Option<Enigo>,
     mouse_passthrough: bool,
+    scroll_remainder: f32,
     window_id: Option<iced::window::Id>,
     raw_window_id: Option<u32>,
     x11_connection: Option<RustConnection>
@@ -73,13 +76,22 @@ impl Stadio {
                 mouse_passthrough: false,
                 window_id: None,
                 raw_window_id: None,
-                x11_connection
+                x11_connection,
+                page: keyboard::Page::Letters,
+                scroll_remainder: 0.0,
             },
             window::latest().map(Message::WindowId),
         )
     }
 
     fn update(&mut self, message: Message) -> Task<Message> {
+        self.scroll_remainder += self.controller.scroll * self.controller.scroll.abs() * 1.2;
+        let scroll = self.scroll_remainder.trunc() as i32;
+        if scroll != 0 {
+            let _ = self.enigo.as_mut().unwrap().scroll(scroll, Axis::Vertical);
+            self.scroll_remainder -= scroll as f32;
+        }
+
         match message {
             Message::WindowId(id) => {
                 self.window_id = id;
@@ -103,11 +115,22 @@ impl Stadio {
 
                 if keyboard_opened && let Ok((x, y)) = enigo.location() {
                     info!("keyboard opened, mouse at ({},{})", x, y);
-                    self.keyboard_position = Point::new(x as f32 - 140.0, y as f32 - 140.0);
+                    self.keyboard_position = Point::new(x as f32 - 135.0, y as f32 - 135.0);
                 }
 
-                if controller.right_trigger {
+                if controller.left_click {
                     let _ = enigo.button(Button::Left, Direction::Click);
+                }
+                if controller.right_click {
+                    let _ = enigo.button(Button::Right, Direction::Click);
+                }
+                if controller.next_page {
+                    self.page = self.page.next();
+                }
+                if controller.confirm
+                    && let Some(key) = keyboard::selected_key(controller.left_stick, self.page)
+                {
+                    press_key(enigo, key);
                 }
 
                 let (x, y) = controller.right_stick;
@@ -161,6 +184,7 @@ impl canvas::Program<Message> for Stadio {
         keyboard::draw_keyboard(
             &mut frame,
             self.controller.left_stick,
+            self.page,
         );
         vec![frame.into_geometry()]
     }
@@ -168,6 +192,34 @@ impl canvas::Program<Message> for Stadio {
 
 fn magnitude(stick: (f32, f32)) -> f32 {
     stick.0.hypot(stick.1)
+}
+
+fn press_key(enigo: &mut Enigo, name: &str) {
+    let key = match name {
+        "SPACE" => Some(Key::Space),
+        "ENTER" => Some(Key::Return),
+        "BKSP" => Some(Key::Backspace),
+        "TAB" => Some(Key::Tab),
+        "SHIFT" => Some(Key::Shift),
+        "CAPS" => Some(Key::CapsLock),
+        "ESC" => Some(Key::Escape),
+        "DEL" => Some(Key::Delete),
+        "LEFT" => Some(Key::LeftArrow),
+        "RIGHT" => Some(Key::RightArrow),
+        "UP" => Some(Key::UpArrow),
+        "DOWN" => Some(Key::DownArrow),
+        "HOME" => Some(Key::Home),
+        "END" => Some(Key::End),
+        "PGUP" => Some(Key::PageUp),
+        "PGDN" => Some(Key::PageDown),
+        _ => None,
+    };
+
+    if let Some(key) = key {
+        let _ = enigo.key(key, Direction::Click);
+    } else if name.chars().count() == 1 {
+        let _ = enigo.text(name);
+    }
 }
 
 #[cfg(target_os = "macos")]
