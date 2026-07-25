@@ -9,3 +9,5 @@ enigo = { version = "0.6.1", features = ["wayland"] }
 log = "0.4.33"
 simple_logger = "5.2.0"
 winit = "0.30.13"
+tiny-skia = "0.12.0"
+softbuffer = "0.4.8"
