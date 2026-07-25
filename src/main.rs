@@ -1,7 +1,13 @@
 mod controller;
 mod keyboard;
 
-use std::{num::NonZeroU32, rc::Rc, sync::{Arc, Mutex}, thread::sleep, time::{Duration, Instant}};
+use std::{
+    num::NonZeroU32,
+    rc::Rc,
+    sync::{Arc, Mutex},
+    thread::sleep,
+    time::{Duration, Instant},
+};
 
 use controller::*;
 use enigo::{Enigo, Settings};
@@ -11,15 +17,30 @@ use tiny_skia::{Color, Paint, PathBuilder, Pixmap, Stroke, Transform};
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
-use winit::window::{Window, WindowId, WindowAttributes};
+use winit::window::{Window, WindowAttributes, WindowId};
 
 use crate::keyboard::KeyboardPopup;
 
-#[derive(Default)]
 struct StadioApp {
     window: Option<Rc<Window>>,
     context: Option<Context<Rc<Window>>>,
-    surface: Option<Surface<Rc<Window>, Rc<Window>>>
+    surface: Option<Surface<Rc<Window>, Rc<Window>>>,
+    enigo: Arc<Mutex<Enigo>>,
+    controller: Controller,
+}
+
+impl Default for StadioApp {
+    fn default() -> Self {
+        Self {
+            window: None,
+            context: None,
+            surface: None,
+            enigo: Arc::new(Mutex::new(
+                Enigo::new(&Settings::default()).expect("Failed to init enigo"),
+            )),
+            controller: Controller::new(),
+        }
+    }
 }
 
 impl ApplicationHandler for StadioApp {
@@ -28,17 +49,23 @@ impl ApplicationHandler for StadioApp {
             .with_transparent(true)
             .with_decorations(false)
             .with_resizable(false);
-        let window = Rc::new(event_loop.create_window(attrs).expect("Failed to create window"));
+        let window = Rc::new(
+            event_loop
+                .create_window(attrs)
+                .expect("Failed to create window"),
+        );
         window.request_redraw();
 
         let context = Context::new(window.clone()).expect("Failed to create context");
         let mut surface = Surface::new(&context, window.clone()).expect("Failed to create surface");
 
         let size = window.inner_size();
-        surface.resize(
-            NonZeroU32::new(size.width).unwrap(),
-            NonZeroU32::new(size.height).unwrap()
-        ).expect("Failed to resize surface");
+        surface
+            .resize(
+                NonZeroU32::new(size.width).unwrap(),
+                NonZeroU32::new(size.height).unwrap(),
+            )
+            .expect("Failed to resize surface");
 
         self.window = Some(window);
         self.context = Some(context);
@@ -55,11 +82,11 @@ impl ApplicationHandler for StadioApp {
             WindowEvent::CloseRequested => {
                 info!("Close requested");
                 event_loop.exit();
-            },
+            }
             WindowEvent::RedrawRequested => {
                 let surface = self.surface.as_mut().unwrap();
                 let window = self.window.as_ref().unwrap();
-                
+
                 let mut paint = Paint::default();
 
                 let (width, height) = {
@@ -76,9 +103,16 @@ impl ApplicationHandler for StadioApp {
                 let mut pixmap = Pixmap::new(width, height).expect("Failed to create pixmap");
                 pixmap.fill(Color::from_rgba8(0, 0, 0, 0));
 
-                let path = PathBuilder::from_circle((width / 2) as f32, (height / 2) as f32, 15.0).unwrap();
+                let path = PathBuilder::from_circle((width / 2) as f32, (height / 2) as f32, 15.0)
+                    .unwrap();
                 paint.set_color_rgba8(255, 0, 0, 255);
-                pixmap.fill_path(&path, &paint, tiny_skia::FillRule::EvenOdd, Transform::identity(), None);
+                pixmap.fill_path(
+                    &path,
+                    &paint,
+                    tiny_skia::FillRule::EvenOdd,
+                    Transform::identity(),
+                    None,
+                );
 
                 let mut buffer = surface.buffer_mut().unwrap();
 
@@ -93,7 +127,7 @@ impl ApplicationHandler for StadioApp {
                 if let Some(window) = self.window.as_ref() {
                     window.request_redraw();
                 }
-            },
+            }
             _ => {}
         }
     }
@@ -101,17 +135,18 @@ impl ApplicationHandler for StadioApp {
 
 fn main() {
     simple_logger::init_with_level(log::Level::Info).expect("Failed to initialize logger");
-    
+
     let event_loop = EventLoop::new().expect("Failed to create event loop");
     event_loop.set_control_flow(ControlFlow::Wait);
-    event_loop.run_app(&mut StadioApp::default()).expect("Failed to run StadioApp");
+    event_loop
+        .run_app(&mut StadioApp::default())
+        .expect("Failed to run StadioApp");
 }
 
 /*
 fn main() {
 
-    let enigo = Arc::new(Mutex::new(Enigo::new(&Settings::default()).expect("Failed to init enigo")));
-    let mut keyboard_popup = KeyboardPopup::new(enigo.clone());
+        let mut keyboard_popup = KeyboardPopup::new(enigo.clone());
 
     let mut controller = Controller::new();
 

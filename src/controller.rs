@@ -18,7 +18,7 @@ impl Controller {
         let gilrs = Gilrs::new().unwrap();
         let active_gamepad = gilrs.gamepads().next().map(|(id, _)| id);
 
-        Controller  {
+        Controller {
             gilrs,
             active_gamepad,
             l_stick: (0.0, 0.0),
