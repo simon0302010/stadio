@@ -24,3 +24,13 @@ impl KeyboardPopup {
         Ok(())
     }
 }
+
+pub struct KeyboardKey {
+    key: char,
+    layer: u8,
+    angle: i32
+}
+
+impl KeyboardKey {
+
+}
