@@ -62,7 +62,7 @@ impl Stadio {
             self.keyboard_position = Point::new(x as f32, y as f32);
         }
 
-        if controller.clicked {
+        if controller.right_trigger {
             let _ = enigo.button(Button::Left, Direction::Click);
         }
 

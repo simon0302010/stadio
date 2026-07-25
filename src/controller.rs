@@ -6,7 +6,7 @@ use tokio::time::{Duration, sleep};
 pub struct ControllerState {
     pub left_stick: (f32, f32),
     pub right_stick: (f32, f32),
-    pub clicked: bool,
+    pub right_trigger: bool,
 }
 
 struct Controller {
@@ -22,14 +22,14 @@ impl Controller {
     }
 
     fn read(&mut self) -> ControllerState {
-        let mut clicked = false;
+        let mut right_trigger = false;
         while let Some(event) = self.gilrs.next_event() {
             match event.event {
                 EventType::Disconnected if self.gamepad == Some(event.id) => self.gamepad = None,
                 EventType::Disconnected => {}
                 EventType::ButtonPressed(Button::RightTrigger2, _) => {
                     self.gamepad = Some(event.id);
-                    clicked = true;
+                    right_trigger = true;
                 }
                 _ => self.gamepad = Some(event.id),
             }
@@ -42,7 +42,7 @@ impl Controller {
 
         let Some(id) = self.gamepad else {
             return ControllerState {
-                clicked,
+                right_trigger,
                 ..ControllerState::default()
             };
         };
@@ -56,7 +56,7 @@ impl Controller {
                 gamepad.value(Axis::RightStickX),
                 gamepad.value(Axis::RightStickY),
             ),
-            clicked,
+            right_trigger,
         }
     }
 }
@@ -81,7 +81,7 @@ pub fn listen() -> impl Stream<Item = ControllerState> {
                 let mouse_moving =
                     magnitude(state.right_stick) > 0.05 || magnitude(old_state.right_stick) > 0.05;
 
-                if previous.is_none() || keyboard_moved || mouse_moving || state.clicked {
+                if previous.is_none() || keyboard_moved || mouse_moving || state.right_trigger {
                     return Some((state, (controller, Some(state))));
                 }
             }
