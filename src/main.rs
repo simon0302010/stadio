@@ -160,12 +160,16 @@ impl Stadio {
                         self.keyboard_position
                     };
 
-                    let (width, height) = self
+                    let (mut width, mut height) = self
                         .enigo
                         .as_ref()
                         .expect("No enigo")
                         .main_display()
                         .expect("Failed to get main display size");
+                    if is_x11() {
+                        width -= 100;
+                        height -= 100;
+                    }
                     dest.x = dest.x.clamp(0.0, width as f32 - 280.0);
                     dest.y = dest.y.clamp(0.0, height as f32 - 280.0);
 
