@@ -140,7 +140,13 @@ impl Stadio {
                 }
 
                 if keyboard_opened && let Some(id) = self.window_id {
-                    return move_window(id, self.keyboard_position, self.raw_window_id, &mut self.x11_connection);
+                    let mut dest = if is_x11() { Point { x: self.keyboard_position.x - 50.0, y: self.keyboard_position.y - 50.0 } } else { self.keyboard_position };
+
+                    let (width, height) = self.enigo.as_ref().expect("No enigo").main_display().expect("Failed to get main display size");
+                    dest.x = dest.x.clamp(0.0, width as f32 - 280.0);
+                    dest.y = dest.y.clamp(0.0, height as f32 - 280.0);
+
+                    return move_window(id, dest, self.raw_window_id, &mut self.x11_connection);
                 }
 
                 Task::none()
@@ -247,7 +253,7 @@ fn move_window(id: window::Id, dest: Point<f32>, raw_window_id: Option<u32>, x11
     info!("moving window to {:?}", dest);
 
     if is_x11() && let Some(raw_id) = raw_window_id && let Some(conn) = x11_connection {
-        conn.configure_window(raw_id, &ConfigureWindowAux::new().x(dest.x as i32 - 50).y(dest.y as i32 - 50)).expect("Failed to move window");
+        conn.configure_window(raw_id, &ConfigureWindowAux::new().x(dest.x as i32).y(dest.y as i32)).expect("Failed to move window");
         conn.flush().expect("Failed to flush connection");
         conn.sync().expect("Failed to sync connection");
         Task::none()
