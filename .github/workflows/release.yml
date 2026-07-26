@@ -1,0 +1,101 @@
+name: Release builds
+
+on:
+  push:
+    branches:
+      - "**"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libudev-dev libwayland-dev libxkbcommon-dev
+      - name: Build
+        run: cargo build --release --locked
+      - name: Package
+        run: |
+          mkdir -p dist/package
+          cp target/release/stadio dist/package/
+          tar -czf dist/stadio-linux-x86_64.tar.gz -C dist/package stadio
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stadio-linux-x86_64
+          path: dist/stadio-linux-x86_64.tar.gz
+          if-no-files-found: error
+
+  macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin,aarch64-apple-darwin
+      - name: Build Intel
+        run: cargo build --release --locked --target x86_64-apple-darwin
+      - name: Build Apple Silicon
+        run: cargo build --release --locked --target aarch64-apple-darwin
+      - name: Package universal binary
+        run: |
+          mkdir -p dist/package
+          lipo -create \
+            target/x86_64-apple-darwin/release/stadio \
+            target/aarch64-apple-darwin/release/stadio \
+            -output dist/package/stadio
+          tar -czf dist/stadio-macos-universal.tar.gz -C dist/package stadio
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stadio-macos-universal
+          path: dist/stadio-macos-universal.tar.gz
+          if-no-files-found: error
+
+  windows:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build
+        run: cargo build --release --locked
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist
+          Compress-Archive -Path target/release/stadio.exe -DestinationPath dist/stadio-windows-x86_64.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stadio-windows-x86_64
+          path: dist/stadio-windows-x86_64.zip
+          if-no-files-found: error
+
+  release:
+    needs:
+      - linux
+      - macos
+      - windows
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Create checksums
+        working-directory: dist
+        run: sha256sum * > SHA256SUMS
+      - name: Create GitHub prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          short_sha="${GITHUB_SHA::7}"
+          tag="build-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          gh release create "$tag" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Stadio ${GITHUB_REF_NAME} (${short_sha})" \
+            --notes "Automatic build from ${GITHUB_REF_NAME} at ${GITHUB_SHA}." \
+            --prerelease
