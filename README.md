@@ -1,3 +1,5 @@
+![Mockup](https://onsilo.dev/ifyoureadthisyouarecool/703_1x_shots_so.png)
+
 # stadio
 
 A piece of software that allows you to control your entire computer using a game controller.
